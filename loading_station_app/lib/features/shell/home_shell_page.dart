@@ -28,7 +28,7 @@ class _HomeShellPageState extends ConsumerState<HomeShellPage> {
       body: widget.shell,
       bottomNavigationBar: NavigationBar(
         selectedIndex: widget.shell.currentIndex,
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.surface,
         indicatorColor: AppColors.primary.withValues(alpha: 0.15),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Overview'),

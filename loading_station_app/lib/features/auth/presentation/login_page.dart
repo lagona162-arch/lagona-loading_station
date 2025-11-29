@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/config/supabase_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../data/auth_repository.dart';
+import '../providers/auth_providers.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -40,7 +41,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             email: _emailCtrl.text.trim(),
             password: _passwordCtrl.text,
           );
-      if (mounted) context.go('/');
+      if (mounted) {
+        // Check if LSCODE is linked, router will handle redirect
+        final linkedStation = await ref.read(linkedStationIdProvider.future);
+        if (linkedStation == null) {
+          context.go('/lscode');
+        } else {
+          context.go('/');
+        }
+      }
     } catch (error) {
       _showSnack('Unable to sign in: $error');
     } finally {
@@ -111,17 +120,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                 ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
                                 : const Text('Sign in'),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Text('Need access? '),
-                            TextButton(
-                              onPressed: () => context.go('/register'),
-                              child: const Text('Register Loading Station'),
-                            ),
-                          ],
                         ),
                       ],
                     ),

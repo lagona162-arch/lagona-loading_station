@@ -246,12 +246,15 @@ class DeliverySummary extends Equatable {
   List<Object?> get props => [id, type, status, merchantName, riderName, total, createdAt];
 }
 
+enum TopUpStatus { pending, approved, rejected }
+
 class TopUpSummary extends Equatable {
   const TopUpSummary({
     required this.id,
     required this.amount,
     required this.bonus,
     required this.totalCredited,
+    required this.status,
     required this.createdAt,
     this.forRiderName,
     this.requestorName,
@@ -261,28 +264,44 @@ class TopUpSummary extends Equatable {
   final double amount;
   final double bonus;
   final double totalCredited;
+  final TopUpStatus status;
   final DateTime? createdAt;
   final String? forRiderName;
   final String? requestorName;
 
-  factory TopUpSummary.fromMap(Map<String, dynamic> map) => TopUpSummary(
-        id: map['id']?.toString() ?? '',
-        amount: (map['amount'] as num?)?.toDouble() ?? 0,
-        bonus: (map['bonus_amount'] as num?)?.toDouble() ?? 0,
-        totalCredited: (map['total_credited'] as num?)?.toDouble() ?? 0,
-        createdAt: map['created_at'] != null ? DateTime.tryParse(map['created_at'].toString()) : null,
-        forRiderName: map['riders']?['users']?['full_name']?.toString(),
-        requestorName: map['initiated_by_user']?['full_name']?.toString(),
-      );
+  factory TopUpSummary.fromMap(Map<String, dynamic> map) {
+    final statusStr = map['status']?.toString().toLowerCase() ?? 'pending';
+    TopUpStatus status;
+    switch (statusStr) {
+      case 'approved':
+        status = TopUpStatus.approved;
+        break;
+      case 'rejected':
+        status = TopUpStatus.rejected;
+        break;
+      default:
+        status = TopUpStatus.pending;
+    }
+    
+    return TopUpSummary(
+      id: map['id']?.toString() ?? '',
+      amount: (map['amount'] as num?)?.toDouble() ?? 0,
+      bonus: (map['bonus_amount'] as num?)?.toDouble() ?? 0,
+      totalCredited: (map['total_credited'] as num?)?.toDouble() ?? 0,
+      status: status,
+      createdAt: map['created_at'] != null ? DateTime.tryParse(map['created_at'].toString()) : null,
+      forRiderName: map['riders']?['users']?['full_name']?.toString(),
+      requestorName: map['initiated_by_user']?['full_name']?.toString(),
+    );
+  }
 
   @override
-  List<Object?> get props => [id, amount, bonus, totalCredited, createdAt, forRiderName];
+  List<Object?> get props => [id, amount, bonus, totalCredited, status, createdAt, forRiderName];
 }
 
 class StationDashboardData extends Equatable {
   const StationDashboardData({
     required this.station,
-    required this.commission,
     required this.riders,
     required this.merchants,
     required this.deliveries,
@@ -293,7 +312,6 @@ class StationDashboardData extends Equatable {
   });
 
   final LoadingStationProfile station;
-  final CommissionConfig commission;
   final List<RiderProfile> riders;
   final List<MerchantProfile> merchants;
   final List<DeliverySummary> deliveries;
@@ -373,6 +391,7 @@ class StationDashboardData extends Equatable {
         amount: 5000,
         bonus: 2500,
         totalCredited: 7500,
+        status: TopUpStatus.approved,
         createdAt: DateTime.now().subtract(const Duration(minutes: 45)),
         requestorName: 'Business Hub',
       ),
@@ -381,13 +400,13 @@ class StationDashboardData extends Equatable {
         amount: 1200,
         bonus: 300,
         totalCredited: 1500,
+        status: TopUpStatus.approved,
         createdAt: DateTime.now().subtract(const Duration(days: 1)),
         forRiderName: 'Rider 3',
       ),
     ];
     return StationDashboardData(
       station: station,
-      commission: const CommissionConfig(hubPercentage: 50, stationPercentage: 25, riderPercentage: 20, shareholderPercentage: 5),
       riders: riders,
       merchants: merchants,
       deliveries: deliveries,
@@ -400,7 +419,6 @@ class StationDashboardData extends Equatable {
 
   StationDashboardData copyWith({
     LoadingStationProfile? station,
-    CommissionConfig? commission,
     List<RiderProfile>? riders,
     List<MerchantProfile>? merchants,
     List<DeliverySummary>? deliveries,
@@ -411,7 +429,6 @@ class StationDashboardData extends Equatable {
   }) =>
       StationDashboardData(
         station: station ?? this.station,
-        commission: commission ?? this.commission,
         riders: riders ?? this.riders,
         merchants: merchants ?? this.merchants,
         deliveries: deliveries ?? this.deliveries,
@@ -424,7 +441,6 @@ class StationDashboardData extends Equatable {
   @override
   List<Object?> get props => [
         station,
-        commission,
         riders,
         merchants,
         deliveries,

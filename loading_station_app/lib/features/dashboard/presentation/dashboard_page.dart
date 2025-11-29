@@ -51,8 +51,6 @@ class DashboardPage extends ConsumerWidget {
               const SizedBox(height: 16),
               _HierarchyCard(data: data),
               const SizedBox(height: 16),
-              _CommissionCard(data: data),
-              const SizedBox(height: 16),
               _DeliveriesBoard(deliveries: data.deliveries),
               const SizedBox(height: 16),
               _RiderQueue(
@@ -184,64 +182,6 @@ class _HierarchyCard extends ConsumerWidget {
   }
 }
 
-class _CommissionCard extends StatelessWidget {
-  const _CommissionCard({required this.data});
-
-  final StationDashboardData data;
-
-  @override
-  Widget build(BuildContext context) {
-    final commission = data.commission;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SectionHeader(
-              title: 'Dynamic Commission',
-              subtitle: 'Configured from Supabase • Admin adjustable',
-              actionLabel: 'Manage',
-              onPressed: () {},
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                _CommissionPill(label: 'Business Hub', value: commission.hubPercentage),
-                _CommissionPill(label: 'Loading Station', value: commission.stationPercentage),
-                _CommissionPill(label: 'Rider', value: commission.riderPercentage),
-                _CommissionPill(label: 'Shareholder', value: commission.shareholderPercentage),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.trending_up, color: AppColors.primary),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      '₱5,000 top-up → ₱${(5000 * (1 + commission.hubPercentage / 100)).toStringAsFixed(0)} credited for Business Hub.\n'
-                      '₱1,000 top-up → ₱${(1000 * (1 + commission.stationPercentage / 100)).toStringAsFixed(0)} credited for Loading Station.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.textPrimary),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class _DeliveriesBoard extends StatelessWidget {
   const _DeliveriesBoard({required this.deliveries});
@@ -373,7 +313,7 @@ class _MerchantDirectory extends StatelessWidget {
                   contentPadding: EdgeInsets.zero,
                   leading: CircleAvatar(
                     backgroundColor: AppColors.secondaryLight,
-                    child: const Icon(Icons.storefront, color: Colors.white),
+                    child: const Icon(Icons.storefront, color: AppColors.textWhite),
                   ),
                   title: Text(merchant.businessName),
                   subtitle: Text('${merchant.ridersHandled} riders • Status: ${merchant.status ?? 'pending'}'),
@@ -578,35 +518,6 @@ class _HierarchyTile extends StatelessWidget {
   }
 }
 
-class _CommissionPill extends StatelessWidget {
-  const _CommissionPill({required this.label, required this.value});
-
-  final String label;
-  final double value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(label, style: Theme.of(context).textTheme.bodyMedium),
-          const SizedBox(width: 8),
-          Chip(
-            label: Text('${value.toStringAsFixed(0)}%'),
-            backgroundColor: AppColors.primary.withValues(alpha: .15),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _DeliveryTile extends StatelessWidget {
   const _DeliveryTile({required this.delivery});
@@ -702,10 +613,10 @@ Color _statusColor(String status) {
       return AppColors.statusPending;
     case 'accepted':
     case 'assigned':
-      return Colors.blue;
+      return AppColors.primary;
     case 'picked_up':
     case 'in_transit':
-      return Colors.purple;
+      return AppColors.primaryDark;
     case 'delivered':
     case 'completed':
       return AppColors.success;

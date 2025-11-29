@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../features/auth/presentation/login_page.dart';
-import '../../features/auth/presentation/registration_page.dart';
+import '../../features/auth/presentation/lscode_entry_page.dart';
 import '../../features/auth/providers/auth_providers.dart';
 import '../../features/dashboard/presentation/dashboard_page.dart';
 import '../../features/deliveries/presentation/deliveries_page.dart';
@@ -13,6 +13,7 @@ import '../../features/riders/presentation/riders_page.dart';
 import '../../features/shell/home_shell_page.dart';
 import '../../features/topup/presentation/topup_page.dart';
 import '../config/supabase_config.dart';
+import '../theme/app_colors.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final refreshNotifier = ref.watch(_goRouterRefreshNotifierProvider);
@@ -21,10 +22,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     initialLocation: '/',
     debugLogDiagnostics: false,
     refreshListenable: refreshNotifier,
-    redirect: (context, state) {
+    redirect: (context, state) async {
       final session = ref.read(sessionStreamProvider).valueOrNull;
       final loggingIn = state.fullPath == '/login';
-      final registering = state.fullPath == '/register';
+      final enteringLSCode = state.fullPath == '/lscode';
       final configMissing = state.fullPath == '/config-missing';
 
       if (!SupabaseConfig.isConfigured) {
@@ -32,12 +33,37 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       }
 
       final isLoggedIn = session != null;
-      if (!isLoggedIn && !loggingIn && !registering) {
+      
+      // If not logged in and not on login page, redirect to login
+      if (!isLoggedIn && !loggingIn) {
         return '/login';
       }
-      if (isLoggedIn && (loggingIn || registering)) {
+      
+      // If logged in and on login page, check if LSCODE is linked
+      if (isLoggedIn && loggingIn) {
+        final linkedStation = await ref.read(linkedStationIdProvider.future);
+        if (linkedStation == null) {
+          return '/lscode';
+        }
         return state.fullPath == '/' ? null : '/';
       }
+      
+      // If logged in but not on login/LSCODE page, check if LSCODE is linked
+      if (isLoggedIn && !loggingIn && !enteringLSCode) {
+        final linkedStation = await ref.read(linkedStationIdProvider.future);
+        if (linkedStation == null) {
+          return '/lscode';
+        }
+      }
+      
+      // If on LSCODE page but already linked, redirect to home
+      if (isLoggedIn && enteringLSCode) {
+        final linkedStation = await ref.read(linkedStationIdProvider.future);
+        if (linkedStation != null) {
+          return '/';
+        }
+      }
+      
       return null;
     },
     routes: [
@@ -50,8 +76,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const LoginPage(),
       ),
       GoRoute(
-        path: '/register',
-        builder: (context, state) => const LoadingStationRegistrationPage(),
+        path: '/lscode',
+        builder: (context, state) => const LSCodeEntryPage(),
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) => HomeShellPage(shell: navigationShell),
@@ -133,7 +159,7 @@ class MissingConfigPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.surface,
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Center(
@@ -142,7 +168,7 @@ class MissingConfigPage extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.wifi_off_rounded, size: 72, color: Colors.grey),
+                const Icon(Icons.wifi_off_rounded, size: 72, color: AppColors.textSecondary),
                 const SizedBox(height: 16),
                 const Text(
                   'Supabase credentials missing',

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/models/station_models.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/id_utils.dart';
 import '../../dashboard/data/station_repository.dart';
+import '../../riders/presentation/riders_page.dart';
 
 class MerchantsPage extends ConsumerStatefulWidget {
   const MerchantsPage({super.key});
@@ -14,6 +16,59 @@ class MerchantsPage extends ConsumerStatefulWidget {
 
 class _MerchantsPageState extends ConsumerState<MerchantsPage> {
   String _search = '';
+  String? _expandedMerchantId;
+
+  Future<void> _showRiderPriorityDialog(String merchantId, String merchantName) async {
+    final dashboard = await ref.read(stationDashboardProvider.future);
+    final allRiders = dashboard.riders.where((r) => r.status != RiderStatus.pending).toList();
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Prioritize Riders for $merchantName'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: allRiders.length,
+            itemBuilder: (context, index) {
+              final rider = allRiders[index];
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: AppColors.primary.withValues(alpha: .15),
+                  child: Text(rider.name.characters.first.toUpperCase()),
+                ),
+                title: Text(rider.name),
+                subtitle: Text('Priority: P${rider.priorityLevel}'),
+                trailing: Switch(
+                  value: rider.priorityLevel > 0,
+                  onChanged: (value) async {
+                    await ref.read(stationRepositoryProvider).updateRiderPriorityForMerchant(
+                          riderId: rider.id,
+                          merchantId: merchantId,
+                          priority: value ? 1 : 0,
+                        );
+                    if (context.mounted) {
+                      ref.invalidate(stationDashboardProvider);
+                      ref.invalidate(stationMerchantsProvider);
+                      Navigator.of(context).pop();
+                      _showRiderPriorityDialog(merchantId, merchantName);
+                    }
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +119,7 @@ class _MerchantsPageState extends ConsumerState<MerchantsPage> {
                         children: [
                           CircleAvatar(
                             backgroundColor: AppColors.secondaryLight,
-                            child: Text(merchant.businessName.characters.first.toUpperCase(), style: const TextStyle(color: Colors.white)),
+                            child: Text(merchant.businessName.characters.first.toUpperCase(), style: const TextStyle(color: AppColors.textWhite)),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -96,25 +151,34 @@ class _MerchantsPageState extends ConsumerState<MerchantsPage> {
                           ),
                           child: const Text('Demo merchant – load live merchant records to approve or reject.'),
                         )
-                      else if (isPending) ...[
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: () => ref.read(stationRepositoryProvider).approveMerchant(merchant.id, approved: false),
-                                child: const Text('Reject'),
+                      else ...[
+                        if (isPending) ...[
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () => ref.read(stationRepositoryProvider).approveMerchant(merchant.id, approved: false),
+                                  child: const Text('Reject'),
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: () => ref.read(stationRepositoryProvider).approveMerchant(merchant.id, approved: true),
-                                child: const Text('Approve'),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () => ref.read(stationRepositoryProvider).approveMerchant(merchant.id, approved: true),
+                                  child: const Text('Approve'),
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
+                        ] else ...[
+                          const SizedBox(height: 12),
+                          ElevatedButton.icon(
+                            onPressed: () => _showRiderPriorityDialog(merchant.id, merchant.businessName),
+                            icon: const Icon(Icons.priority_high),
+                            label: const Text('Manage Prioritized Riders'),
+                          ),
+                        ],
                       ],
                     ],
                   ),

@@ -135,10 +135,10 @@ Color _statusColor(String status) {
       return AppColors.statusPending;
     case 'accepted':
     case 'assigned':
-      return Colors.blue;
+      return AppColors.primary;
     case 'picked_up':
     case 'in_transit':
-      return Colors.purple;
+      return AppColors.primaryDark;
     case 'delivered':
     case 'completed':
       return AppColors.success;

@@ -41,23 +41,21 @@ class StationRepository {
     try {
       final results = await Future.wait([
         _service.fetchStationProfile(stationId),
-        _service.fetchCommissionConfig(),
         _service.fetchRiders(stationId),
         _service.fetchMerchants(stationId),
         _service.fetchDeliveries(stationId),
         _service.fetchTopUps(stationId),
       ]);
 
-      final riders = List<RiderProfile>.from(results[2] as List<RiderProfile>);
-      final merchants = List<MerchantProfile>.from(results[3] as List<MerchantProfile>);
+      final riders = List<RiderProfile>.from(results[1] as List<RiderProfile>);
+      final merchants = List<MerchantProfile>.from(results[2] as List<MerchantProfile>);
 
       return StationDashboardData(
         station: results[0] as LoadingStationProfile,
-        commission: results[1] as CommissionConfig,
         riders: riders,
         merchants: merchants,
-        deliveries: List<DeliverySummary>.from(results[4] as List<DeliverySummary>),
-        topUps: List<TopUpSummary>.from(results[5] as List<TopUpSummary>),
+        deliveries: List<DeliverySummary>.from(results[3] as List<DeliverySummary>),
+        topUps: List<TopUpSummary>.from(results[4] as List<TopUpSummary>),
         pendingRiderRequests: riders.where((r) => r.status == RiderStatus.pending).length,
         pendingMerchantRequests: merchants.where((m) => (m.status ?? '').toLowerCase() == 'pending').length,
         lastUpdated: DateTime.now(),
@@ -85,6 +83,16 @@ class StationRepository {
 
   Future<void> updateRiderPriority(String riderId, int priority) => _service.updateRiderPriority(riderId, priority);
 
+  Future<void> updateRiderPriorityForMerchant({
+    required String riderId,
+    required String merchantId,
+    required int priority,
+  }) => _service.updateRiderPriorityForMerchant(
+        riderId: riderId,
+        merchantId: merchantId,
+        priority: priority,
+      );
+
   Future<String> regenerateLsCode(String stationId) => _service.generateLoadingStationCode(stationId);
 
   Future<void> createTopUp({
@@ -99,5 +107,14 @@ class StationRepository {
         bonusOverride: bonusOverride,
         riderId: riderId,
       );
+
+  Future<void> requestTopUpFromStation({required double amount}) => _service.requestTopUpFromStation(amount: amount);
+
+  Future<void> respondTopUp({required String topUpId, required bool approve}) => _service.respondTopUp(
+        topUpId: topUpId,
+        approve: approve,
+      );
+
+  Future<List<TopUpSummary>> fetchPendingTopUpRequests(String stationId) => _service.fetchPendingTopUpRequests(stationId);
 }
 
