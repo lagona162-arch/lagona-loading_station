@@ -41,16 +41,72 @@ class _DeliveriesPageState extends ConsumerState<DeliveriesPage> {
           return Column(
             children: [
               Padding(
-                padding: const EdgeInsets.all(16),
-                child: SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'active', label: Text('Active')),
-                    ButtonSegment(value: 'completed', label: Text('Completed')),
-                    ButtonSegment(value: 'pabili', label: Text('Pabili')),
-                    ButtonSegment(value: 'padala', label: Text('Padala')),
-                  ],
-                  selected: {_filter},
-                  onSelectionChanged: (value) => setState(() => _filter = value.first),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final availableWidth = constraints.maxWidth;
+                    final segmentWidth = (availableWidth - 12) / 4; // 12px for gaps between segments
+                    
+                    return SegmentedButton<String>(
+                      style: SegmentedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                        minimumSize: const Size(0, 36),
+                        textStyle: const TextStyle(fontSize: 13),
+                      ),
+                      segments: [
+                        ButtonSegment(
+                          value: 'active',
+                          label: SizedBox(
+                            width: segmentWidth,
+                            child: const Text(
+                              'Active',
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ),
+                        ),
+                        ButtonSegment(
+                          value: 'completed',
+                          label: SizedBox(
+                            width: segmentWidth,
+                            child: const Text(
+                              'Completed',
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ),
+                        ),
+                        ButtonSegment(
+                          value: 'pabili',
+                          label: SizedBox(
+                            width: segmentWidth,
+                            child: const Text(
+                              'Pabili',
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ),
+                        ),
+                        ButtonSegment(
+                          value: 'padala',
+                          label: SizedBox(
+                            width: segmentWidth,
+                            child: const Text(
+                              'Padala',
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ),
+                        ),
+                      ],
+                      selected: {_filter},
+                      onSelectionChanged: (value) => setState(() => _filter = value.first),
+                    );
+                  },
                 ),
               ),
               Expanded(

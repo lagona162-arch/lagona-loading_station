@@ -4,7 +4,15 @@ import 'package:intl/intl.dart';
 
 import '../../../core/models/station_models.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../services/supabase_service.dart';
+import '../../auth/providers/auth_providers.dart';
 import '../../dashboard/data/station_repository.dart';
+
+// Provider to fetch commission rate for loading_station role
+final _loadingStationCommissionRateProvider = FutureProvider<double>((ref) async {
+  final service = ref.watch(supabaseServiceProvider);
+  return await service.getCommissionRateForRole('loading_station');
+});
 
 class TopUpPage extends ConsumerStatefulWidget {
   const TopUpPage({super.key});
@@ -55,20 +63,28 @@ class _TopUpPageState extends ConsumerState<TopUpPage> {
                     return;
                   }
                   try {
-                    await ref.read(stationRepositoryProvider).requestTopUpFromStation(amount: amount);
-                    if (context.mounted) {
-                      Navigator.of(context).pop();
-                      ref.invalidate(stationDashboardProvider);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Top-up request submitted')),
-                      );
+                    final stationId = ref.read(currentStationIdProvider);
+                    if (stationId == null) {
+                      throw Exception('Station ID not found. Please verify your loading station code.');
                     }
+                    await ref.read(stationRepositoryProvider).requestTopUpFromStation(
+                      stationId: stationId,
+                      amount: amount,
+                    );
+                    if (!context.mounted) return;
+                    // Get scaffold messenger before popping
+                    final messenger = ScaffoldMessenger.of(context);
+                    Navigator.of(context).pop();
+                    ref.invalidate(stationDashboardProvider);
+                    // Show snackbar using the messenger we got before popping
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('Top-up request submitted')),
+                    );
                   } catch (error) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Failed to submit request: $error')),
-                      );
-                    }
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to submit request: $error')),
+                    );
                   }
                 },
                 child: const Text('Submit Request'),
@@ -76,6 +92,142 @@ class _TopUpPageState extends ConsumerState<TopUpPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Future<void> _showRiderTopUpBreakdownModal(TopUpSummary topUp, bool isApproval) async {
+    final formatter = NumberFormat.currency(locale: 'en_PH', symbol: '₱');
+    final bonusRate = topUp.bonus > 0 && topUp.amount > 0 
+        ? (topUp.bonus / topUp.amount * 100).toStringAsFixed(1)
+        : '0.0';
+    
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(isApproval ? 'Approve Top-Up Request' : 'Reject Top-Up Request'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Request from: ${topUp.forRiderName ?? 'Rider'}', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Top-Up Breakdown', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Requested Amount:', style: Theme.of(context).textTheme.bodyMedium),
+                      Text(formatter.format(topUp.amount), style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Bonus Rate ($bonusRate%):', style: Theme.of(context).textTheme.bodyMedium),
+                      Text(formatter.format(topUp.bonus), style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Total to Credit:', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                      Text(formatter.format(topUp.totalCredited), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: AppColors.primary)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              // Don't close modal yet - wait for operation to complete
+              final stationId = ref.read(currentStationIdProvider);
+              if (stationId == null) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Station ID not found')),
+                );
+                return;
+              }
+              
+              // Show loading indicator
+              final navigator = Navigator.of(context);
+              final messenger = ScaffoldMessenger.of(context);
+              
+              try {
+                // Use respondTopUpRequest if it's from topup_requests table, otherwise use respondTopUp
+                if (topUp.isFromTopupRequests) {
+                  await ref.read(stationRepositoryProvider).respondTopUpRequest(
+                        requestId: topUp.id,
+                        approve: isApproval,
+                        stationId: stationId,
+                      );
+                } else {
+                  await ref.read(stationRepositoryProvider).respondTopUp(
+                        topUpId: topUp.id,
+                        approve: isApproval,
+                        stationId: stationId,
+                      );
+                }
+                
+                // Close modal after operation completes
+                navigator.pop();
+                
+                if (context.mounted) {
+                  // Refresh the provider to update UI immediately
+                  ref.invalidate(stationDashboardProvider);
+                  // Force a refresh to get new data
+                  ref.refresh(stationDashboardProvider);
+                  
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(isApproval ? 'Top-up request approved successfully' : 'Top-up request rejected'),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                }
+              } catch (error, stackTrace) {
+                // Close modal even on error
+                if (navigator.canPop()) {
+                  navigator.pop();
+                }
+                
+                if (context.mounted) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to ${isApproval ? 'approve' : 'reject'} request: $error'),
+                      duration: const Duration(seconds: 5),
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isApproval ? AppColors.primary : AppColors.error,
+              foregroundColor: AppColors.textWhite,
+            ),
+            child: Text(isApproval ? 'Confirm Approve' : 'Confirm Reject'),
+          ),
+        ],
       ),
     );
   }
@@ -162,6 +314,9 @@ class _TopUpPageState extends ConsumerState<TopUpPage> {
               : data.topUps;
           final pendingCount = data.topUps.where((t) => t.status == TopUpStatus.pending).length;
 
+          // Fetch commission rate from commission_settings for loading_station role
+          final commissionRateAsync = ref.watch(_loadingStationCommissionRateProvider);
+
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -175,7 +330,11 @@ class _TopUpPageState extends ConsumerState<TopUpPage> {
                       const SizedBox(height: 8),
                       Text(formatter.format(data.station.balance), style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
-                      Text('Bonus rate ${(data.station.bonusRate * 100).toStringAsFixed(0)}%'),
+                      commissionRateAsync.when(
+                        data: (rate) => Text('Bonus rate ${(rate * 100).toStringAsFixed(0)}%'),
+                        loading: () => const Text('Bonus rate ...'),
+                        error: (_, __) => Text('Bonus rate ${(data.station.bonusRate * 100).toStringAsFixed(0)}%'), // Fallback to stored rate
+                      ),
                       if (data.station.businessHub != null) ...[
                         const SizedBox(height: 8),
                         Text('Business Hub: ${data.station.businessHub!.name}'),
@@ -216,16 +375,23 @@ class _TopUpPageState extends ConsumerState<TopUpPage> {
                             color: isPending ? AppColors.statusPending.withValues(alpha: .1) : null,
                             child: ListTile(
                               contentPadding: const EdgeInsets.all(12),
+                              dense: false,
                               leading: Icon(
                                 isPending ? Icons.pending : Icons.check_circle,
                                 color: isPending ? AppColors.statusPending : AppColors.success,
+                                size: 24,
                               ),
                               title: Text(formatter.format(topUp.totalCredited)),
                               subtitle: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    '${topUp.requestorName ?? 'Station'} → ${topUp.forRiderName ?? 'Wallet'}',
+                                    topUp.isFromRider 
+                                      ? '${topUp.forRiderName ?? 'Rider'} → Station Wallet'
+                                      : topUp.isToBusinessHub
+                                        ? 'Station → Business Hub'
+                                        : '${topUp.requestorName ?? 'Station'} → ${topUp.forRiderName ?? 'Wallet'}',
                                   ),
                                   Text('Bonus ${formatter.format(topUp.bonus)}'),
                                   if (isPending)
@@ -233,49 +399,49 @@ class _TopUpPageState extends ConsumerState<TopUpPage> {
                                       'Status: ${topUp.status.name.toUpperCase()}',
                                       style: TextStyle(color: AppColors.statusPending, fontWeight: FontWeight.bold),
                                     ),
-                                ],
-                              ),
-                              trailing: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(DateFormat('MMM dd\nhh:mm a').format(topUp.createdAt ?? DateTime.now())),
-                                  if (isPending) ...[
+                                  if (isPending && topUp.isToBusinessHub)
+                                    Text(
+                                      'Waiting for Business Hub approval',
+                                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontStyle: FontStyle.italic),
+                                    ),
+                                  if (isPending && topUp.isFromRider) ...[
                                     const SizedBox(height: 8),
                                     Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        IconButton(
-                                          icon: const Icon(Icons.close, size: 18),
-                                          color: AppColors.error,
-                                          onPressed: () async {
-                                            await ref.read(stationRepositoryProvider).respondTopUp(
-                                                  topUpId: topUp.id,
-                                                  approve: false,
-                                                );
-                                            if (context.mounted) {
-                                              ref.invalidate(stationDashboardProvider);
-                                            }
-                                          },
+                                        OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                            minimumSize: Size.zero,
+                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                            side: BorderSide(color: AppColors.error),
+                                          ),
+                                          icon: Icon(Icons.close, size: 16, color: AppColors.error),
+                                          label: Text('Reject', style: TextStyle(fontSize: 12, color: AppColors.error)),
+                                          onPressed: () => _showRiderTopUpBreakdownModal(topUp, false),
                                         ),
-                                        const SizedBox(width: 4),
-                                        IconButton(
-                                          icon: const Icon(Icons.check, size: 18),
-                                          color: AppColors.success,
-                                          onPressed: () async {
-                                            await ref.read(stationRepositoryProvider).respondTopUp(
-                                                  topUpId: topUp.id,
-                                                  approve: true,
-                                                );
-                                            if (context.mounted) {
-                                              ref.invalidate(stationDashboardProvider);
-                                            }
-                                          },
+                                        const SizedBox(width: 8),
+                                        ElevatedButton.icon(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: AppColors.primary,
+                                            foregroundColor: AppColors.textWhite,
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                            minimumSize: Size.zero,
+                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          ),
+                                          icon: const Icon(Icons.check, size: 16),
+                                          label: const Text('Approve', style: TextStyle(fontSize: 12)),
+                                          onPressed: () => _showRiderTopUpBreakdownModal(topUp, true),
                                         ),
                                       ],
                                     ),
                                   ],
                                 ],
+                              ),
+                              trailing: Text(
+                                DateFormat('MMM dd\nhh:mm a').format(topUp.createdAt ?? DateTime.now()),
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 10),
+                                textAlign: TextAlign.right,
                               ),
                             ),
                           );

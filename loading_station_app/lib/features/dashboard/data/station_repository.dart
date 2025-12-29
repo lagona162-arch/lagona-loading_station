@@ -77,7 +77,7 @@ class StationRepository {
     }
   }
 
-  Future<void> approveRider(String riderId, {required bool approved}) => _service.approveRider(riderId, approved: approved);
+  Future<void> approveRider(String riderId, {required bool approved, required String stationId}) => _service.approveRider(riderId, approved: approved, stationId: stationId);
 
   Future<void> approveMerchant(String merchantId, {required bool approved}) => _service.approveMerchant(merchantId, approved: approved);
 
@@ -108,13 +108,32 @@ class StationRepository {
         riderId: riderId,
       );
 
-  Future<void> requestTopUpFromStation({required double amount}) => _service.requestTopUpFromStation(amount: amount);
+  Future<void> requestTopUpFromStation({required String stationId, required double amount}) => _service.requestTopUpFromStation(stationId: stationId, amount: amount);
 
-  Future<void> respondTopUp({required String topUpId, required bool approve}) => _service.respondTopUp(
+  Future<void> respondTopUp({
+    required String topUpId,
+    required bool approve,
+    required String stationId,
+  }) => _service.respondTopUp(
         topUpId: topUpId,
         approve: approve,
+        stationId: stationId,
+      );
+
+  Future<void> respondTopUpRequest({
+    required String requestId,
+    required bool approve,
+    String? rejectionReason,
+    required String stationId,
+  }) => _service.respondTopUpRequest(
+        requestId: requestId,
+        approve: approve,
+        rejectionReason: rejectionReason,
+        stationId: stationId,
       );
 
   Future<List<TopUpSummary>> fetchPendingTopUpRequests(String stationId) => _service.fetchPendingTopUpRequests(stationId);
+
+  Future<List<RiderProfile>> fetchRidersForMerchant(String merchantId) => _service.fetchRidersForMerchant(merchantId);
 }
 

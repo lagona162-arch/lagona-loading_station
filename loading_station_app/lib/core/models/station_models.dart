@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 
 enum DeliveryType { pabili, padala }
 
@@ -50,15 +51,43 @@ class LoadingStationProfile extends Equatable {
   final BusinessHubProfile? businessHub;
   final List<String>? documents;
 
-  factory LoadingStationProfile.fromMap(Map<String, dynamic> map) => LoadingStationProfile(
-        id: map['id']?.toString() ?? '',
-        name: map['name']?.toString() ?? 'Loading Station',
-        lsCode: map['ls_code']?.toString() ?? '--',
-        address: map['address']?.toString(),
-        balance: (map['balance'] as num?)?.toDouble() ?? 0,
-        bonusRate: (map['bonus_rate'] as num?)?.toDouble() ?? 0,
-        businessHub: map['business_hubs'] != null ? BusinessHubProfile.fromMap(map['business_hubs'] as Map<String, dynamic>) : null,
-      );
+  factory LoadingStationProfile.fromMap(Map<String, dynamic> map) {
+    // Handle both 'business_hubs' (from Supabase relationship) and direct object
+    dynamic businessHubsData = map['business_hubs'];
+    
+    debugPrint('LoadingStationProfile.fromMap - business_hubs data type: ${businessHubsData.runtimeType}');
+    debugPrint('LoadingStationProfile.fromMap - business_hubs data: $businessHubsData');
+    
+    // If business_hubs is a list (Supabase sometimes returns arrays), take first item
+    if (businessHubsData is List && businessHubsData.isNotEmpty) {
+      businessHubsData = businessHubsData.first;
+      debugPrint('LoadingStationProfile.fromMap - extracted from list: $businessHubsData');
+    }
+    
+    // If still null but business_hub_id exists, we'll handle it in the service layer
+    BusinessHubProfile? businessHub;
+    if (businessHubsData != null && businessHubsData is Map) {
+      try {
+        businessHub = BusinessHubProfile.fromMap(businessHubsData as Map<String, dynamic>);
+        debugPrint('LoadingStationProfile.fromMap - successfully parsed business hub: ${businessHub.name}');
+      } catch (e, stack) {
+        debugPrint('Error parsing business hub: $e');
+        debugPrintStack(stackTrace: stack);
+      }
+    } else {
+      debugPrint('LoadingStationProfile.fromMap - business_hubs is null or not a Map');
+    }
+    
+    return LoadingStationProfile(
+      id: map['id']?.toString() ?? '',
+      name: map['name']?.toString() ?? 'Loading Station',
+      lsCode: map['ls_code']?.toString() ?? '--',
+      address: map['address']?.toString(),
+      balance: (map['balance'] as num?)?.toDouble() ?? 0,
+      bonusRate: (map['bonus_rate'] as num?)?.toDouble() ?? 0,
+      businessHub: businessHub,
+    );
+  }
 
   LoadingStationProfile copyWith({
     double? balance,
@@ -128,6 +157,19 @@ class RiderProfile extends Equatable {
     required this.commissionRate,
     required this.priorityLevel,
     this.vehicleType,
+    this.phone,
+    this.latitude,
+    this.longitude,
+    this.currentAddress,
+    this.lastActive,
+    this.profilePhotoUrl,
+    this.driversLicenseUrl,
+    this.licenseCardUrl,
+    this.officialReceiptUrl,
+    this.certificateOfRegistrationUrl,
+    this.vehicleFrontUrl,
+    this.vehicleSideUrl,
+    this.vehicleBackUrl,
   });
 
   final String id;
@@ -137,33 +179,98 @@ class RiderProfile extends Equatable {
   final double commissionRate;
   final int priorityLevel;
   final String? vehicleType;
+  final String? phone;
+  final double? latitude;
+  final double? longitude;
+  final String? currentAddress;
+  final DateTime? lastActive;
+  
+  // Document URLs (for pending riders/applicants)
+  final String? profilePhotoUrl;
+  final String? driversLicenseUrl;
+  final String? licenseCardUrl;
+  final String? officialReceiptUrl; // OR
+  final String? certificateOfRegistrationUrl; // CR
+  final String? vehicleFrontUrl;
+  final String? vehicleSideUrl;
+  final String? vehicleBackUrl;
+  
+  // Helper to check if rider application is still pending approval
+  bool get isApplicationPending => status == RiderStatus.pending;
 
-  factory RiderProfile.fromMap(Map<String, dynamic> map) => RiderProfile(
-        id: map['id']?.toString() ?? '',
-        name: map['users']?['full_name']?.toString() ?? map['full_name']?.toString() ?? 'Rider',
-        status: _parseStatus(map['status']),
-        balance: (map['balance'] as num?)?.toDouble() ?? 0,
-        commissionRate: (map['commission_rate'] as num?)?.toDouble() ?? 0,
-        priorityLevel: (map['priority_order'] as num?)?.toInt() ?? 0,
-        vehicleType: map['vehicle_type']?.toString(),
-      );
-
-  static RiderStatus _parseStatus(dynamic raw) {
-    final value = raw?.toString().toLowerCase() ?? '';
-    switch (value) {
-      case 'available':
-        return RiderStatus.available;
-      case 'busy':
-        return RiderStatus.busy;
-      case 'offline':
-        return RiderStatus.offline;
-      default:
-        return RiderStatus.pending;
+  factory RiderProfile.fromMap(Map<String, dynamic> map) {
+    // Determine application status based on access_status and is_active (as per admin guide)
+    // Priority: 1. Check access_status, 2. Fall back to is_active
+    final usersData = map['users'];
+    final accessStatus = usersData?['access_status']?.toString().toLowerCase();
+    final isActive = usersData?['is_active'] as bool?;
+    final operationalStatus = map['status']?.toString().toLowerCase() ?? '';
+    
+    // Determine status: First check access_status, then fall back to is_active
+    // If approved, use the operational status from riders table
+    RiderStatus status;
+    
+    // Check if rider is approved based on admin guide logic:
+    // 1. First check access_status field
+    // 2. If access_status is null, fall back to is_active
+    //    - is_active = true → approved
+    //    - is_active = false → pending
+    final isApproved = accessStatus == 'approved' || 
+                       (accessStatus == null && isActive == true) ||
+                       (accessStatus != 'rejected' && accessStatus != 'pending' && isActive == true);
+    
+    if (isApproved) {
+      // Rider is approved, use operational status from riders table (available/busy/offline)
+      switch (operationalStatus) {
+        case 'available':
+          status = RiderStatus.available;
+          break;
+        case 'busy':
+          status = RiderStatus.busy;
+          break;
+        case 'offline':
+          status = RiderStatus.offline;
+          break;
+        default:
+          // If no operational status is set but rider is approved, default to offline
+          status = RiderStatus.offline;
+      }
+    } else {
+      // Rider is pending approval or rejected - show as pending (for application review)
+      status = RiderStatus.pending;
     }
+    
+    return RiderProfile(
+      id: map['id']?.toString() ?? '',
+      name: usersData?['full_name']?.toString() ?? map['full_name']?.toString() ?? 'Rider',
+      status: status,
+      balance: (map['balance'] as num?)?.toDouble() ?? 0,
+      commissionRate: (map['commission_rate'] as num?)?.toDouble() ?? 0,
+      priorityLevel: (map['priority_order'] as num?)?.toInt() ?? 0,
+      vehicleType: map['vehicle_type']?.toString(),
+      phone: usersData?['phone']?.toString() ?? map['phone']?.toString(),
+      latitude: (map['latitude'] as num?)?.toDouble(),
+      longitude: (map['longitude'] as num?)?.toDouble(),
+      currentAddress: map['current_address']?.toString(),
+      lastActive: map['last_active'] != null ? DateTime.tryParse(map['last_active'].toString()) : null,
+      profilePhotoUrl: map['profile_photo_url']?.toString() ?? map['profile_picture_url']?.toString(),
+      driversLicenseUrl: map['drivers_license_url']?.toString() ?? map['license_url']?.toString(),
+      licenseCardUrl: map['license_card_url']?.toString(),
+      officialReceiptUrl: map['official_receipt_url']?.toString() ?? map['or_url']?.toString(),
+      certificateOfRegistrationUrl: map['certificate_of_registration_url']?.toString() ?? map['cr_url']?.toString(),
+      vehicleFrontUrl: map['vehicle_front_url']?.toString(),
+      vehicleSideUrl: map['vehicle_side_url']?.toString(),
+      vehicleBackUrl: map['vehicle_back_url']?.toString(),
+    );
   }
 
   @override
-  List<Object?> get props => [id, name, status, balance, commissionRate, priorityLevel, vehicleType];
+  List<Object?> get props => [
+    id, name, status, balance, commissionRate, priorityLevel, vehicleType, phone, 
+    latitude, longitude, currentAddress, lastActive,
+    profilePhotoUrl, driversLicenseUrl, licenseCardUrl, officialReceiptUrl, 
+    certificateOfRegistrationUrl, vehicleFrontUrl, vehicleSideUrl, vehicleBackUrl
+  ];
 }
 
 class MerchantProfile extends Equatable {
@@ -258,6 +365,9 @@ class TopUpSummary extends Equatable {
     required this.createdAt,
     this.forRiderName,
     this.requestorName,
+    this.riderId,
+    this.businessHubId,
+    this.isFromTopupRequests = false,
   });
 
   final String id;
@@ -268,6 +378,9 @@ class TopUpSummary extends Equatable {
   final DateTime? createdAt;
   final String? forRiderName;
   final String? requestorName;
+  final String? riderId;
+  final String? businessHubId;
+  final bool isFromTopupRequests; // Flag to identify if this came from topup_requests table
 
   factory TopUpSummary.fromMap(Map<String, dynamic> map) {
     final statusStr = map['status']?.toString().toLowerCase() ?? 'pending';
@@ -292,11 +405,30 @@ class TopUpSummary extends Equatable {
       createdAt: map['created_at'] != null ? DateTime.tryParse(map['created_at'].toString()) : null,
       forRiderName: map['riders']?['users']?['full_name']?.toString(),
       requestorName: map['initiated_by_user']?['full_name']?.toString(),
+      riderId: map['rider_id']?.toString().isEmpty == true ? null : map['rider_id']?.toString(),
+      businessHubId: map['business_hub_id']?.toString().isEmpty == true ? null : map['business_hub_id']?.toString(),
+      isFromTopupRequests: map['_isFromTopupRequests'] == true, // Internal flag set during mapping
     );
   }
 
+  // Check if this is a request FROM a rider (loading station can approve)
+  // Rider requests are in 'topups' table with rider_id set and no business_hub_id
+  bool get isFromRider {
+    final hasRider = riderId != null && riderId!.isNotEmpty;
+    final noBusinessHub = businessHubId == null || businessHubId!.isEmpty;
+    return hasRider && noBusinessHub;
+  }
+  
+  // Check if this is a request FROM loading station TO business hub (only business hub can approve)
+  // Station-to-hub requests are in 'topup_requests' table with business_hub_id set and no rider_id
+  bool get isToBusinessHub {
+    final hasBusinessHub = businessHubId != null && businessHubId!.isNotEmpty;
+    final noRider = riderId == null || riderId!.isEmpty;
+    return hasBusinessHub && noRider;
+  }
+
   @override
-  List<Object?> get props => [id, amount, bonus, totalCredited, status, createdAt, forRiderName];
+  List<Object?> get props => [id, amount, bonus, totalCredited, status, createdAt, forRiderName, riderId, businessHubId, isFromTopupRequests];
 }
 
 class StationDashboardData extends Equatable {
